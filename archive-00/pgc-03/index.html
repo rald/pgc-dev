@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title>pgc</title>
+	<style>
+		body {
+			background-color: black;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			height: 100vh;
+			margin: 0;
+		}
+		canvas {
+			image-rendering: pixelated;
+		}
+	</style>
+</head>
+<body>
+
+	<button id="btnrun">run</button>
+
+	<textarea id="txtinput">(print "hello from fe" (+ 2 3))</textarea>
+
+	<textarea id="txtoutput"></textarea>
+
+	<canvas id="cvsscreen"></canvas>
+
+	<script src="sweetie.js"></script>
+	<script src="font.js"></script>
+	<script src="fe.js"></script>
+
+	<script>
+		var btnRun = document.getElementById("btnrun");
+		var txtInput = document.getElementById("txtinput");
+		var txtOutput = document.getElementById("txtoutput");
+
+		var canvas = document.getElementById("cvsscreen");
+		var ctx = canvas.getContext("2d");
+
+		canvas.width = 512;
+		canvas.height = 512;
+		ctx.fillStyle = SWEETIE[8];
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+		function drawGlyph(charCode, x, y, scale, color) {
+			var glyph = font.glyphs[charCode];
+			if (!glyph) {
+				return;
+			}
+
+			ctx.fillStyle = color;
+
+			for (var row = 0; row < font.height; row++) {
+				var rowByte = glyph[row];
+				for (var col = 0; col < font.width; col++) {
+					var bitMask = 1 << (font.width - 1 - col);
+					if ((rowByte & bitMask) !== 0) {
+						ctx.fillRect(
+							x + col * scale,
+							y + row * scale,
+							scale,
+							scale
+						);
+					}
+				}
+			}
+		}
+
+		function drawText(text, x, y, scale, spacing, color) {
+			var cursorX = x;
+			var step = (font.width + spacing) * scale;
+
+			for (var i = 0; i < text.length; i++) {
+				var code = text.charCodeAt(i);
+				drawGlyph(code, cursorX, y, scale, color);
+				cursorX += step;
+			}
+		}
+
+		function appendOutput(line) {
+			txtOutput.value += (txtOutput.value ? "\n" : "") + line;
+		}
+
+		function btnRunOnClick() {
+			var lines = [];
+			var code = txtInput.value;
+			txtOutput.value = "";
+
+			var feCtx = fe.createContext({
+				onPrint: function (str) {
+					lines.push(str);
+				},
+				onError: function (msg, trace, fullMsg) {
+					lines.push("Error: " + fullMsg);
+				}
+			});
+
+			feCtx.addCFunc("clear", function (_, args) {
+				var colIdx = (args && args.type === 0 && args.car && args.car.type === 1) ? args.car.value : 8;
+				ctx.fillStyle = SWEETIE[colIdx] || SWEETIE[8];
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+				return feCtx.NIL;
+			});
+
+			feCtx.addCFunc("text", function (_, args) {
+				var str = (args && args.type === 0 && args.car && args.car.type === 3) ? args.car.value : "";
+				var r1 = (args && args.type === 0) ? args.cdr : null;
+				var x = (r1 && r1.type === 0 && r1.car && r1.car.type === 1) ? r1.car.value : 16;
+				var r2 = (r1 && r1.type === 0) ? r1.cdr : null;
+				var y = (r2 && r2.type === 0 && r2.car && r2.car.type === 1) ? r2.car.value : 16;
+				var r3 = (r2 && r2.type === 0) ? r2.cdr : null;
+				var scale = (r3 && r3.type === 0 && r3.car && r3.car.type === 1) ? r3.car.value : 2;
+				var r4 = (r3 && r3.type === 0) ? r3.cdr : null;
+				var colIdx = (r4 && r4.type === 0 && r4.car && r4.car.type === 1) ? r4.car.value : 12;
+				drawText(str, x, y, scale, 1, SWEETIE[colIdx] || SWEETIE[12]);
+				return feCtx.NIL;
+			});
+
+			try {
+				var result = feCtx.evalString(code);
+				if (lines.length === 0 && result !== feCtx.NIL) {
+					lines.push(feCtx.toString(result));
+				}
+			} catch (err) {
+				if (lines.length === 0) {
+					lines.push("Error: " + (err && err.message ? err.message : String(err)));
+				}
+			}
+
+			appendOutput(lines.join("\n"));
+		}
+
+		btnRun.addEventListener("click", btnRunOnClick);
+	</script>
+</body>
+</html>

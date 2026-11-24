@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title>pgc</title>
+	<style>
+		body {
+			background-color: black;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			height: 100vh;
+			margin: 0;
+		}
+		canvas {
+			image-rendering: pixelated;
+		}
+	</style>
+</head>
+<body>
+
+	<button id="btnrun">run</button>
+
+	<textarea id="txtinput">
+
+	</textarea>
+
+	<textarea id="txtoutput">
+
+	</textarea>
+
+	<canvas id="cvsscreen"></canvas>
+
+	<script src="sweetie.js"></script>
+	<script src="font.js"></script>
+	<script src="fe.js"></script>
+
+	<script>
+
+		function drawGlyph(charCode, x, y, scale, color) {
+			var glyph = font.glyphs[charCode];
+			if (!glyph) {
+				return;
+			}
+
+			ctx.fillStyle = color;
+
+			for (var row = 0; row < font.height; row++) {
+				var rowByte = glyph[row];
+				for (var col = 0; col < font.width; col++) {
+					var bitMask = 1 << (font.width - 1 - col);
+					if ((rowByte & bitMask) !== 0) {
+						ctx.fillRect(
+							x + col * scale,
+							y + row * scale,
+							scale,
+							scale
+						);
+					}
+				}
+			}
+		}
+
+		function drawText(text, x, y, scale, spacing, color) {
+			var cursorX = x;
+			var step = (font.width + spacing) * scale;
+
+			for (var i = 0; i < text.length; i++) {
+				var code = text.charCodeAt(i);
+				drawGlyph(code, cursorX, y, scale, color);
+				cursorX += step;
+			}
+		}
+
+		function appendOutput(line) {
+			txtOutput.value += (txtOutput.value ? "\n" : "") + line;
+		}
+
+		function btnRunOnClick() {
+			var lines = [];
+			var code = txtInput.value;
+			txtOutput.value = "";
+
+			var feCtx = fe.createContext({
+				onPrint: function (str) {
+					lines.push(str);
+				},
+				onError: function (msg, trace, fullMsg) {
+					lines.push("Error: " + fullMsg);
+				}
+			});
+
+			try {
+				var result = feCtx.evalString(code);
+				if (lines.length === 0 && result !== feCtx.NIL) {
+					lines.push(feCtx.toString(result));
+				}
+			} catch (err) {
+				if (lines.length === 0) {
+					lines.push("Error: " + (err && err.message ? err.message : String(err)));
+				}
+			}
+
+			appendOutput(lines.join("\n"));
+		});
+
+		var btnRun = document.getElementById("btnrun");
+		var txtInput = document.getElementById("txtinput");
+		var txtOutput = document.getElementById("txtoutput");
+
+		var canvas = document.getElementById("cvsscreen");
+		var ctx = canvas.getContext("2d");
+
+		canvas.width = 512;
+		canvas.height = 512;
+		ctx.fillStyle = SWEETIE[8];
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+		btnRun.addEventListener("click",btnRunOnClick);
+
+	</script>
+</body>
+</html>

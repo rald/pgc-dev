@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>pgc</title>
+	<style>
+		* {
+			box-sizing: border-box;
+		}
+		body {
+			background-color: #1a1c2c; /* SWEETIE[0] */
+			color: #f4f4f4;            /* SWEETIE[12] */
+			font-family: monospace;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			min-height: 100vh;
+			margin: 0;
+			padding: 16px;
+		}
+		.app {
+			display: flex;
+			gap: 16px;
+			align-items: stretch;
+			max-width: 1040px;
+			width: 100%;
+		}
+		.editor-pane {
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+			flex: 1;
+			min-width: 300px;
+		}
+		.toolbar {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+		}
+		.title {
+			font-size: 16px;
+			font-weight: bold;
+			color: #73eff7; /* SWEETIE[11] */
+			letter-spacing: 1px;
+		}
+		button {
+			background-color: #38b764; /* SWEETIE[6] */
+			color: #1a1c2c;
+			border: 2px solid #a7f070; /* SWEETIE[5] */
+			padding: 6px 18px;
+			font-family: monospace;
+			font-size: 14px;
+			font-weight: bold;
+			cursor: pointer;
+			text-transform: uppercase;
+		}
+		button:hover {
+			background-color: #a7f070;
+		}
+		button:active {
+			transform: translateY(1px);
+		}
+		textarea {
+			width: 100%;
+			background-color: #29366f; /* SWEETIE[8] */
+			color: #f4f4f4;
+			border: 2px solid #566c86; /* SWEETIE[14] */
+			padding: 10px;
+			font-family: monospace;
+			font-size: 14px;
+			line-height: 1.4;
+			resize: none;
+			outline: none;
+		}
+		textarea:focus {
+			border-color: #41a6f6; /* SWEETIE[10] */
+		}
+		#txtinput {
+			flex: 1;
+			min-height: 320px;
+		}
+		#txtoutput {
+			height: 140px;
+			background-color: #151724;
+			color: #ffcd75; /* SWEETIE[4] */
+		}
+		.screen-pane {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+		}
+		canvas {
+			width: 512px;
+			height: 512px;
+			border: 2px solid #566c86;
+			image-rendering: pixelated;
+			display: block;
+		}
+		@media (max-width: 880px) {
+			.app {
+				flex-direction: column;
+				align-items: center;
+			}
+			.editor-pane {
+				width: 100%;
+				max-width: 512px;
+			}
+		}
+	</style>
+</head>
+<body>
+
+	<div class="app">
+		<div class="editor-pane">
+			<div class="toolbar">
+				<span class="title">PGC // FE</span>
+				<button id="btnrun">Run</button>
+			</div>
+			<textarea id="txtinput" spellcheck="false" placeholder="; Write fe code here...
+(cls 8)
+(text &quot;HELLO WORLD!&quot; 32 32 4 1 12)
+(print (+ 1 2 3))"></textarea>
+			<textarea id="txtoutput" readonly placeholder="Output..."></textarea>
+		</div>
+
+		<div class="screen-pane">
+			<canvas id="cvsscreen" width="512" height="512"></canvas>
+		</div>
+	</div>
+
+	<script src="sweetie.js"></script>
+	<script src="font.js"></script>
+	<script src="fe.js"></script>
+
+	<script>
+		var btnRun = document.getElementById("btnrun");
+		var txtInput = document.getElementById("txtinput");
+		var txtOutput = document.getElementById("txtoutput");
+
+		var canvas = document.getElementById("cvsscreen");
+		var ctx = canvas.getContext("2d");
+
+		function getColor(idx) {
+			if (typeof idx === "number" && SWEETIE[idx]) {
+				return SWEETIE[idx];
+			}
+			return SWEETIE[12];
+		}
+
+		function clearScreen(colorIdx) {
+			ctx.fillStyle = getColor(colorIdx !== undefined ? colorIdx : 8);
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+		}
+
+		function drawGlyph(charCode, x, y, scale, color) {
+			var glyph = font.glyphs[charCode];
+			if (!glyph) {
+				return;
+			}
+
+			ctx.fillStyle = color;
+
+			for (var row = 0; row < font.height; row++) {
+				var rowByte = glyph[row];
+				for (var col = 0; col < font.width; col++) {
+					var bitMask = 1 << (font.width - 1 - col);
+					if ((rowByte & bitMask) !== 0) {
+						ctx.fillRect(
+							x + col * scale,
+							y + row * scale,
+							scale,
+							scale
+						);
+					}
+				}
+			}
+		}
+
+		function drawText(text, x, y, scale, spacing, color) {
+			var cursorX = x;
+			var step = (font.width + spacing) * scale;
+
+			for (var i = 0; i < text.length; i++) {
+				var code = text.charCodeAt(i);
+				drawGlyph(code, cursorX, y, scale, color);
+				cursorX += step;
+			}
+		}
+
+		function appendOutput(line) {
+			txtOutput.value += (txtOutput.value ? "\n" : "") + line;
+		}
+
+		function argAt(args, index) {
+			var cur = args;
+			for (var i = 0; i < index; i++) {
+				if (!cur || cur.type !== 0) {
+					return null;
+				}
+				cur = cur.cdr;
+			}
+			return (cur && cur.type === 0) ? cur.car : null;
+		}
+
+		function btnRunOnClick() {
+			var lines = [];
+			var code = txtInput.value;
+			txtOutput.value = "";
+
+			var feCtx = fe.createContext({
+				onPrint: function (str) {
+					lines.push(str);
+				},
+				onError: function (msg, trace, fullMsg) {
+					lines.push("Error: " + fullMsg);
+				}
+			});
+
+			/* Optional graphics bindings for canvas */
+			feCtx.addCFunc("cls", function (_, args) {
+				var col = argAt(args, 0);
+				clearScreen(col ? col.value : 8);
+				return feCtx.NIL;
+			});
+
+			feCtx.addCFunc("rect", function (_, args) {
+				var x = argAt(args, 0), y = argAt(args, 1);
+				var w = argAt(args, 2), h = argAt(args, 3);
+				var col = argAt(args, 4);
+				ctx.fillStyle = getColor(col ? col.value : 12);
+				ctx.fillRect(x ? x.value : 0, y ? y.value : 0, w ? w.value : 16, h ? h.value : 16);
+				return feCtx.NIL;
+			});
+
+			feCtx.addCFunc("text", function (_, args) {
+				var str = argAt(args, 0);
+				var x = argAt(args, 1), y = argAt(args, 2);
+				var scale = argAt(args, 3), spacing = argAt(args, 4);
+				var col = argAt(args, 5);
+				drawText(
+					str ? String(str.value) : "",
+					x ? x.value : 0,
+					y ? y.value : 0,
+					scale ? scale.value : 2,
+					spacing ? spacing.value : 1,
+					getColor(col ? col.value : 12)
+				);
+				return feCtx.NIL;
+			});
+
+			try {
+				var result = feCtx.evalString(code);
+				if (lines.length === 0 && result !== feCtx.NIL) {
+					lines.push(feCtx.toString(result));
+				}
+			} catch (err) {
+				if (lines.length === 0) {
+					lines.push("Error: " + (err && err.message ? err.message : String(err)));
+				}
+			}
+
+			appendOutput(lines.join("\n"));
+		}
+
+		clearScreen(8);
+		btnRun.addEventListener("click", btnRunOnClick);
+	</script>
+</body>
+</html>

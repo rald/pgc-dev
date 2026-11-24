@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>pgc</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+	<div class="workspace">
+		<div class="editor-pane">
+			<div class="toolbar">
+				<span class="title">PGC // FE</span>
+				<div class="toolbar-actions">
+					<span class="shortcut-hint">Ctrl+Enter</span>
+					<button id="btnrun">Run</button>
+				</div>
+			</div>
+
+			<label for="txtinput">Code</label>
+			<textarea id="txtinput" spellcheck="false">(clear 8)
+(text "HELLO FROM FE!" 16 16 3 4)
+(print "Result:" (+ 2 3))</textarea>
+
+			<label for="txtoutput">Console</label>
+			<textarea id="txtoutput" readonly placeholder="Output will appear here..."></textarea>
+		</div>
+
+		<div class="screen-pane">
+			<canvas id="cvsscreen"></canvas>
+		</div>
+	</div>
+
+	<script src="sweetie.js"></script>
+	<script src="font.js"></script>
+	<script src="fe.js"></script>
+	<script src="extension.js"></script>
+
+	<script>
+		var btnRun = document.getElementById("btnrun");
+		var txtInput = document.getElementById("txtinput");
+		var txtOutput = document.getElementById("txtoutput");
+
+		var canvas = document.getElementById("cvsscreen");
+		var ctx = canvas.getContext("2d");
+
+		canvas.width = 512;
+		canvas.height = 512;
+		ctx.fillStyle = SWEETIE[8];
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+		function appendOutput(line) {
+			txtOutput.value += (txtOutput.value ? "\n" : "") + line;
+		}
+
+		function btnRunOnClick() {
+			var lines = [];
+			var code = txtInput.value;
+			txtOutput.value = "";
+
+			var feCtx = fe.createContext({
+				onPrint: function (str) {
+					lines.push(str);
+				},
+				onError: function (msg, trace, fullMsg) {
+					lines.push("Error: " + fullMsg);
+				}
+			});
+
+			registerPgcExtensions(feCtx, canvas, ctx);
+
+			try {
+				var res = feCtx.evalString(code);
+				if (res && res.type !== 7) {
+					lines.push("=> " + feCtx.toString(res));
+				}
+			} catch (e) {
+				if (lines.length === 0) {
+					lines.push("Error: " + e.message);
+				}
+			}
+
+			for (var i = 0; i < lines.length; i++) {
+				appendOutput(lines[i]);
+			}
+		}
+
+		btnRun.addEventListener("click", btnRunOnClick);
+
+		txtInput.addEventListener("keydown", function (e) {
+			if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+				e.preventDefault();
+				btnRunOnClick();
+			}
+		});
+	</script>
+</body>
+</html>

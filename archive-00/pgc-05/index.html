@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>pgc</title>
+	<style>
+		* {
+			box-sizing: border-box;
+		}
+
+		body {
+			background-color: #1a1c2c; /* Sweetie 0 */
+			color: #f4f4f4;            /* Sweetie 12 */
+			font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+			margin: 0;
+			height: 100vh;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			padding: 16px;
+		}
+
+		.workspace {
+			display: flex;
+			gap: 16px;
+			width: 100%;
+			max-width: 1120px;
+			height: 100%;
+			max-height: 600px;
+		}
+
+		/* Left Column: Editor + Output */
+		.editor-pane {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+			min-width: 280px;
+		}
+
+		.toolbar {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			background-color: #333c57; /* Sweetie 15 */
+			padding: 8px 12px;
+			border-radius: 4px;
+		}
+
+		.title {
+			font-weight: bold;
+			letter-spacing: 1px;
+			color: #73eff7; /* Sweetie 11 */
+		}
+
+		.toolbar-actions {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+		}
+
+		.shortcut-hint {
+			font-size: 12px;
+			color: #94b0c2; /* Sweetie 13 */
+		}
+
+		#btnrun {
+			background-color: #38b764; /* Sweetie 6 */
+			color: #1a1c2c;
+			border: none;
+			border-radius: 3px;
+			padding: 6px 16px;
+			font-family: inherit;
+			font-weight: bold;
+			font-size: 13px;
+			text-transform: uppercase;
+			cursor: pointer;
+		}
+
+		#btnrun:hover {
+			background-color: #a7f070; /* Sweetie 5 */
+		}
+
+		#btnrun:active {
+			transform: translateY(1px);
+		}
+
+		label {
+			font-size: 11px;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			color: #94b0c2; /* Sweetie 13 */
+			margin-bottom: -6px;
+		}
+
+		textarea {
+			width: 100%;
+			background-color: #29366f; /* Sweetie 8 */
+			color: #f4f4f4;            /* Sweetie 12 */
+			border: 2px solid #333c57; /* Sweetie 15 */
+			border-radius: 4px;
+			padding: 10px;
+			font-family: inherit;
+			font-size: 14px;
+			line-height: 1.45;
+			resize: none;
+			outline: none;
+		}
+
+		textarea:focus {
+			border-color: #41a6f6; /* Sweetie 10 */
+		}
+
+		#txtinput {
+			flex: 1;
+		}
+
+		#txtoutput {
+			height: 130px;
+			background-color: #141622;
+			color: #a7f070; /* Sweetie 5 */
+		}
+
+		/* Right Column: Canvas Screen */
+		.screen-pane {
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			align-items: center;
+			background-color: #333c57; /* Sweetie 15 */
+			padding: 16px;
+			border-radius: 4px;
+		}
+
+		canvas {
+			image-rendering: pixelated;
+			image-rendering: crisp-edges;
+			width: 512px;
+			height: 512px;
+			max-width: 100%;
+			max-height: 100%;
+			aspect-ratio: 1 / 1;
+			border: 2px solid #1a1c2c;
+			display: block;
+		}
+
+		/* Stack vertically on narrow screens */
+		@media (max-width: 860px) {
+			body {
+				height: auto;
+				min-height: 100vh;
+			}
+			.workspace {
+				flex-direction: column;
+				max-height: none;
+			}
+			#txtinput {
+				min-height: 220px;
+			}
+			canvas {
+				width: 100%;
+				height: auto;
+			}
+		}
+	</style>
+</head>
+<body>
+
+	<div class="workspace">
+		<div class="editor-pane">
+			<div class="toolbar">
+				<span class="title">PGC // FE</span>
+				<div class="toolbar-actions">
+					<span class="shortcut-hint">Ctrl+Enter</span>
+					<button id="btnrun">Run</button>
+				</div>
+			</div>
+
+			<label for="txtinput">Code</label>
+			<textarea id="txtinput" spellcheck="false">(clear 8)
+(text "HELLO FROM FE!" 16 16 3 4)
+(print "Result:" (+ 2 3))</textarea>
+
+			<label for="txtoutput">Console</label>
+			<textarea id="txtoutput" readonly placeholder="Output will appear here..."></textarea>
+		</div>
+
+		<div class="screen-pane">
+			<canvas id="cvsscreen"></canvas>
+		</div>
+	</div>
+
+	<script src="sweetie.js"></script>
+	<script src="font.js"></script>
+	<script src="fe.js"></script>
+
+	<script>
+		var btnRun = document.getElementById("btnrun");
+		var txtInput = document.getElementById("txtinput");
+		var txtOutput = document.getElementById("txtoutput");
+
+		var canvas = document.getElementById("cvsscreen");
+		var ctx = canvas.getContext("2d");
+
+		canvas.width = 512;
+		canvas.height = 512;
+		ctx.fillStyle = SWEETIE[8];
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+		function getColor(idx) {
+			if (typeof idx !== "number" || isNaN(idx)) {
+				return SWEETIE[12];
+			}
+			var i = Math.floor(idx);
+			if (i < 0) {
+				i = 0;
+			} else if (i >= SWEETIE.length) {
+				i = i % SWEETIE.length;
+			}
+			return SWEETIE[i];
+		}
+
+		function drawGlyph(charCode, x, y, scale, color) {
+			var glyph = font.glyphs[charCode];
+			if (!glyph) {
+				return;
+			}
+
+			ctx.fillStyle = color;
+
+			for (var row = 0; row < font.height; row++) {
+				var rowByte = glyph[row];
+				for (var col = 0; col < font.width; col++) {
+					var bitMask = 1 << (font.width - 1 - col);
+					if ((rowByte & bitMask) !== 0) {
+						ctx.fillRect(
+							Math.floor(x + col * scale),
+							Math.floor(y + row * scale),
+							Math.ceil(scale),
+							Math.ceil(scale)
+						);
+					}
+				}
+			}
+		}
+
+		function drawText(text, x, y, scale, spacing, color) {
+			var cursorX = x;
+			var step = (font.width + spacing) * scale;
+
+			for (var i = 0; i < text.length; i++) {
+				var code = text.charCodeAt(i);
+				drawGlyph(code, cursorX, y, scale, color);
+				cursorX += step;
+			}
+		}
+
+		function appendOutput(line) {
+			txtOutput.value += (txtOutput.value ? "\n" : "") + line;
+			txtOutput.scrollTop = txtOutput.scrollHeight;
+		}
+
+		function argAt(args, index) {
+			var cur = args;
+			var i = 0;
+			while (cur && cur.type === 0) {
+				if (i === index) {
+					return cur.car;
+				}
+				cur = cur.cdr;
+				i++;
+			}
+			return null;
+		}
+
+		function btnRunOnClick() {
+			var lines = [];
+			var code = txtInput.value;
+			var hadError = false;
+			txtOutput.value = "";
+
+			var feCtx = fe.createContext({
+				onPrint: function (str) {
+					lines.push(str);
+				},
+				onError: function (msg, trace, fullMsg) {
+					hadError = true;
+					lines.push("Error: " + fullMsg);
+				}
+			});
+
+			/* (clear [colorIndex]) */
+			feCtx.addCFunc("clear", function (_, args) {
+				var a0 = argAt(args, 0);
+				var colIdx = (a0 && a0.type === 1) ? a0.value : 0;
+				ctx.fillStyle = getColor(colIdx);
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+				return feCtx.NIL;
+			});
+
+			/* (text str x y scale colorIndex [spacing]) */
+			feCtx.addCFunc("text", function (_, args) {
+				var aStr = argAt(args, 0);
+				var aX = argAt(args, 1);
+				var aY = argAt(args, 2);
+				var aScale = argAt(args, 3);
+				var aColor = argAt(args, 4);
+				var aSpacing = argAt(args, 5);
+
+				var str = (aStr && aStr.type === 3) ? aStr.value : String(aStr ? feCtx.toString(aStr) : "");
+				var x = (aX && aX.type === 1) ? aX.value : 0;
+				var y = (aY && aY.type === 1) ? aY.value : 0;
+				var scale = (aScale && aScale.type === 1 && aScale.value > 0) ? aScale.value : 1;
+				var colIdx = (aColor && aColor.type === 1) ? aColor.value : 12;
+				var spacing = (aSpacing && aSpacing.type === 1) ? aSpacing.value : 1;
+
+				drawText(str, x, y, scale, spacing, getColor(colIdx));
+				return feCtx.NIL;
+			});
+
+			try {
+				var result = feCtx.evalString(code);
+				if (!hadError && result && result.type !== 7) {
+					lines.push("=> " + feCtx.toString(result));
+				}
+			} catch (err) {
+				if (!hadError) {
+					lines.push("Error: " + (err && err.message ? err.message : String(err)));
+				}
+			}
+
+			for (var i = 0; i < lines.length; i++) {
+				appendOutput(lines[i]);
+			}
+		}
+
+		btnRun.addEventListener("click", btnRunOnClick);
+
+		txtInput.addEventListener("keydown", function (e) {
+			if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+				e.preventDefault();
+				btnRunOnClick();
+			}
+		});
+	</script>
+</body>
+</html>

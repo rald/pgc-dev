@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>pgc</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+	<div class="workspace">
+		<div class="editor-pane">
+			<div class="toolbar">
+				<span class="title">PGC // FE</span>
+				<div class="toolbar-actions">
+					<span class="shortcut-hint">Ctrl+Enter</span>
+					<button id="btnrun">Run</button>
+					<button id="btnstop" disabled>Stop</button>
+				</div>
+			</div>
+
+			<label for="txtinput">Code</label>
+			<textarea id="txtinput" spellcheck="false">(= x 64)
+(= speed 120)
+
+(= _setup (fn ()
+  (= x 64)
+  (= speed 120)
+  (print "Setup initialized")))
+
+(= _draw (fn (dt)
+  (= x (+ x (* speed dt)))
+  (if (&gt; x (- (width) 32)) (= x 32))
+  (clear 8)
+  (fcirc x 256 24 4)
+  (text "PGC LOOP" 16 16 2 12 1)
+  (text "MOVE RIGHT" 16 44 1 11 1)))</textarea>
+
+			<label for="txtoutput">Console</label>
+			<textarea id="txtoutput" readonly placeholder="Output will appear here..."></textarea>
+		</div>
+
+		<div class="screen-pane">
+			<canvas id="cvsscreen"></canvas>
+		</div>
+	</div>
+
+	<script src="sweetie.js"></script>
+	<script src="font.js"></script>
+	<script src="fe.js"></script>
+	<script src="extension.js"></script>
+
+	<script>
+		var btnRun = document.getElementById("btnrun");
+		var btnStop = document.getElementById("btnstop");
+		var txtInput = document.getElementById("txtinput");
+		var txtOutput = document.getElementById("txtoutput");
+
+		var canvas = document.getElementById("cvsscreen");
+		var ctx = canvas.getContext("2d");
+
+		canvas.width = 512;
+		canvas.height = 512;
+		ctx.fillStyle = SWEETIE[8];
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+		var rafId = null;
+		var activeCtx = null;
+		var lastTimestamp = null;
+		var startTimestamp = null;
+		var frameCount = 0;
+		var fpsAccumTime = 0;
+		var fpsFrames = 0;
+		var currentFps = 0;
+		var timing = {
+			dt: 0,
+			elapsed: 0,
+			fps: 0,
+			frame: 0
+		};
+
+		function appendOutput(line) {
+			txtOutput.value += (txtOutput.value ? "\n" : "") + line;
+			txtOutput.scrollTop = txtOutput.scrollHeight;
+		}
+
+		function stopLoop() {
+			if (rafId !== null) {
+				cancelAnimationFrame(rafId);
+				rafId = null;
+			}
+			activeCtx = null;
+			btnStop.disabled = true;
+		}
+
+		function btnStopOnClick() {
+			if (rafId !== null || activeCtx !== null) {
+				stopLoop();
+				appendOutput("Stopped");
+			}
+		}
+
+		function getBoundFunc(feCtx, name) {
+			var sym = feCtx.syms[name];
+			if (sym && sym.value && sym.value.type === feCtx.TYPE_FUNC) {
+				return sym.value;
+			}
+			return null;
+		}
+
+		function invokeFeFunc(feCtx, fnObj, argsArray) {
+			var argList = feCtx.NIL;
+			for (var i = argsArray.length - 1; i >= 0; i--) {
+				argList = feCtx.makePair(argsArray[i], argList);
+			}
+			return feCtx.callFunc(fnObj, argList);
+		}
+
+		function stepFrame(timestamp) {
+			if (!activeCtx) {
+				return;
+			}
+
+			if (startTimestamp === null) {
+				startTimestamp = timestamp;
+			}
+			if (lastTimestamp === null) {
+				lastTimestamp = timestamp;
+			}
+
+			var rawDt = (timestamp - lastTimestamp) / 1000;
+			lastTimestamp = timestamp;
+
+			/* Clamp delta-time to prevent large jumps when tabbing away */
+			var dt = Math.min(Math.max(rawDt, 0), 0.1);
+			var elapsed = (timestamp - startTimestamp) / 1000;
+			frameCount += 1;
+
+			fpsAccumTime += rawDt;
+			fpsFrames += 1;
+			if (fpsAccumTime >= 0.25) {
+				currentFps = Math.round(fpsFrames / fpsAccumTime);
+				fpsAccumTime = 0;
+				fpsFrames = 0;
+			}
+
+			timing.dt = dt;
+			timing.elapsed = elapsed;
+			timing.fps = currentFps;
+			timing.frame = frameCount;
+
+			activeCtx.makeSymbol("dt").value = activeCtx.makeNumber(dt);
+			activeCtx.makeSymbol("elapsed").value = activeCtx.makeNumber(elapsed);
+
+			var drawFn = getBoundFunc(activeCtx, "_draw");
+			if (drawFn) {
+				try {
+					var dtNum = activeCtx.makeNumber(dt);
+					invokeFeFunc(activeCtx, drawFn, [dtNum]);
+				} catch (e) {
+					appendOutput("Error in _draw: " + e.message);
+					stopLoop();
+					return;
+				}
+			}
+
+			rafId = requestAnimationFrame(stepFrame);
+		}
+
+		function btnRunOnClick() {
+			stopLoop();
+
+			var lines = [];
+			var code = txtInput.value;
+			txtOutput.value = "";
+
+			lastTimestamp = null;
+			startTimestamp = null;
+			frameCount = 0;
+			fpsAccumTime = 0;
+			fpsFrames = 0;
+			currentFps = 0;
+			timing = {
+				dt: 0,
+				elapsed: 0,
+				fps: 0,
+				frame: 0
+			};
+
+			var feCtx = fe.createContext({
+				onPrint: function (str) {
+					lines.push(str);
+					appendOutput(str);
+				},
+				onError: function (msg, trace, fullMsg) {
+					lines.push("Error: " + fullMsg);
+					appendOutput("Error: " + fullMsg);
+				}
+			});
+
+			registerPgcExtensions(feCtx, canvas, ctx, function () {
+				return timing;
+			});
+			feCtx.makeSymbol("dt").value = feCtx.makeNumber(0);
+			feCtx.makeSymbol("elapsed").value = feCtx.makeNumber(0);
+
+			activeCtx = feCtx;
+
+			try {
+				var res = feCtx.evalString(code);
+				var setupFn = getBoundFunc(feCtx, "_setup");
+				if (setupFn) {
+					invokeFeFunc(feCtx, setupFn, []);
+				}
+				if (res && res.type !== feCtx.TYPE_NIL && !setupFn && !getBoundFunc(feCtx, "_draw")) {
+					lines.push("=&gt; " + feCtx.toString(res));
+				}
+			} catch (e) {
+				if (lines.length === 0) {
+					lines.push("Error: " + e.message);
+				}
+			}
+
+			if (lines.length === 0 && txtOutput.value === "" && !getBoundFunc(feCtx, "_setup") && !getBoundFunc(feCtx, "_draw")) {
+				/* No output generated */
+			}
+
+			if (getBoundFunc(feCtx, "_draw")) {
+				btnStop.disabled = false;
+				rafId = requestAnimationFrame(stepFrame);
+			} else {
+				activeCtx = null;
+				btnStop.disabled = true;
+			}
+		}
+
+		btnRun.addEventListener("click", btnRunOnClick);
+		btnStop.addEventListener("click", btnStopOnClick);
+
+		txtInput.addEventListener("keydown", function (e) {
+			if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+				e.preventDefault();
+				btnRunOnClick();
+			}
+		});
+	</script>
+</body>
+</html>
